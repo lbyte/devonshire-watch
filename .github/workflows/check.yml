@@ -7,7 +7,7 @@ on:
     inputs:
       date:
         description: "Date to check (YYYY-MM-DD)"
-        default: "2026-10-26"
+        default: "2026-10-25"
 
 permissions:
   contents: write
@@ -23,10 +23,10 @@ jobs:
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          DATE: ${{ inputs.date || '2026-10-26' }}
+          DATE: ${{ inputs.date || '2026-10-25' }}
         run: python check.py
       - name: Save state
-        if: ${{ !inputs.date || inputs.date == '2026-10-26' }}
+        if: ${{ !inputs.date || inputs.date == '2026-10-25' }}
         run: |
           git config user.name "watch-bot"
           git config user.email "watch-bot@users.noreply.github.com"

@@ -7,7 +7,7 @@ import urllib.request
 
 VENUE = "64ba4dc01a788a0a0523a9fa"
 LUNCH_TYPE = "64f1ac8bc00e4863bb3996e9"
-DATE = os.environ.get("DATE", "2026-10-26")
+DATE = os.environ.get("DATE", "2026-10-25")
 PEOPLE = os.environ.get("PEOPLE", "2")
 STATE = pathlib.Path(__file__).with_name("last_seen.txt")
 
