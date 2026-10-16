@@ -27,10 +27,11 @@ print(f"{DATE} for {PEOPLE}: open {summary}")
 
 # Only notify when the set of open slots changes to something non-empty.
 prev = STATE.read_text().strip() if STATE.exists() else ""
-STATE.write_text(summary + "\n")
 if open_slots and summary != prev:
     text = (f"Devonshire lunch slot open! {DATE} for {PEOPLE}: {summary}\n"
             "https://www.devonshiresoho.co.uk/")
     body = urllib.parse.urlencode({"chat_id": os.environ["TG_CHAT_ID"], "text": text}).encode()
     get_json(f"https://api.telegram.org/bot{os.environ['TG_TOKEN']}/sendMessage", body)
     print("Telegram alert sent")
+# Saved after sending, so a failed send is retried on the next check.
+STATE.write_text(summary + "\n")

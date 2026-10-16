@@ -1,34 +1,67 @@
 name: Devonshire lunch watch
 
+# A long-running job checks every 2 minutes for ~5h45m, then dispatches its
+# successor. The cron is only a backup to restart the chain if it breaks;
+# the concurrency group keeps just one watcher running.
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       date:
-        description: "Date to check (YYYY-MM-DD)"
-        default: "2026-10-25"
+        description: "One-off test check for this date (YYYY-MM-DD); empty = start watcher"
+        default: ""
 
 permissions:
   contents: write
+  actions: write
 
-concurrency: watch
+concurrency:
+  group: ${{ inputs.date && format('test-{0}', github.run_id) || 'watch' }}
+  cancel-in-progress: false
+
+env:
+  WATCH_DATE: "2026-10-25"
+  TG_TOKEN: ${{ secrets.TG_TOKEN }}
+  TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
 
 jobs:
-  check:
+  test:
+    if: ${{ inputs.date }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check availability
-        env:
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          DATE: ${{ inputs.date || '2026-10-25' }}
-        run: python check.py
-      - name: Save state
-        if: ${{ !inputs.date || inputs.date == '2026-10-25' }}
+      - run: DATE="${{ inputs.date }}" python check.py
+
+  watch:
+    if: ${{ !inputs.date }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Watch
         run: |
           git config user.name "watch-bot"
           git config user.email "watch-bot@users.noreply.github.com"
-          git add last_seen.txt
-          git diff --cached --quiet || (git commit -m "Update last seen slots" && git push)
+          stop_at=$(TZ=Europe/London date -d "$WATCH_DATE 16:00" +%s)
+          run_until=$(( $(date +%s) + 345 * 60 ))
+          while [ "$(date +%s)" -lt "$run_until" ]; do
+            if [ "$(date +%s)" -ge "$stop_at" ]; then
+              echo "Lunch on $WATCH_DATE is over, disabling watcher"
+              gh workflow disable check.yml
+              exit 0
+            fi
+            DATE="$WATCH_DATE" python check.py || echo "check failed, retrying"
+            if ! git diff --quiet last_seen.txt; then
+              git commit -qam "Update last seen slots"
+              git pull -q --rebase && git push -q || echo "push failed"
+            fi
+            sleep 120
+          done
+      - name: Start next watcher
+        run: |
+          if [ "$(date +%s)" -lt "$(TZ=Europe/London date -d "$WATCH_DATE 16:00" +%s)" ]; then
+            gh workflow run check.yml
+          fi
