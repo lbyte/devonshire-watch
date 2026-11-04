@@ -1,6 +1,6 @@
 name: Jambo Hanare watch
 
-# A long-running job sweeps the dates continuously for ~5h20m, then dispatches
+# A long-running job sweeps the dates continuously for ~4h, then dispatches
 # its successor. The cron is only a backup to restart the chain if it breaks;
 # the concurrency group keeps just one watcher running.
 on:
@@ -54,7 +54,8 @@ jobs:
           git config user.name "watch-bot"
           git config user.email "watch-bot@users.noreply.github.com"
           stop_at=$(TZ=Asia/Tokyo date -d "$STOP_AT_JST" +%s)
-          run_until=$(( $(date +%s) + 320 * 60 ))
+          # Leaves room for a 60-minute backoff plus a full sweep before the job timeout.
+          run_until=$(( $(date +%s) + 240 * 60 ))
           while [ "$(date +%s)" -lt "$run_until" ]; do
             if [ "$(date +%s)" -ge "$stop_at" ]; then
               echo "Last slot has passed, disabling watcher"
@@ -68,7 +69,7 @@ jobs:
               git pull -q --rebase && git push -q || echo "push failed"
             fi
             # Back off properly if TableCheck says we're going too fast.
-            if [ "$code" -eq 3 ]; then sleep 1800; else sleep 30; fi
+            if [ "$code" -eq 3 ]; then sleep 3600; else sleep 30; fi
           done
       - name: Start next watcher
         run: |
