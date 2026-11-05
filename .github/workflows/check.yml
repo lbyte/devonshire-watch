@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SHOP: yakiniku-jambo-honten
-      CATEGORY: 668f6f0318e6c795a136216c
+      CATEGORIES: "668f6f0318e6c795a136216c:test"
       DATES: "2026-11-17"
       DELAY: "5"
       STATE_FILE: /tmp/test-state.json

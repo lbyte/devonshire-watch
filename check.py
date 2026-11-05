@@ -1,5 +1,6 @@
-"""One sweep: Telegram alert when a table opens at Yakiniku Jambo Hanare.
+"""One sweep: Telegram alert when a table opens at a TableCheck venue.
 
+Configured by environment variables; the defaults watch Yakiniku Jambo Hanare.
 Reads availability only (GET); it never submits a booking.
 Exit codes: 0 = sweep finished, 3 = rate limited or site responses not understood.
 """
@@ -12,20 +13,22 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+VENUE = os.environ.get("VENUE", "Jambo Hanare")
 SHOP = os.environ.get("SHOP", "yakiniku-jambo-hanare")
-CATEGORY = os.environ.get("CATEGORY", "66761d96ee97d6a2169dce98")  # Counter
+# Comma-separated id:label pairs, one for each seating category to watch.
+CATEGORIES = [c.split(":") for c in os.environ.get("CATEGORIES", "66761d96ee97d6a2169dce98:counter").split(",")]
 DATES = os.environ.get("DATES", "2026-11-17,2026-11-18,2026-11-19,2026-11-20,2026-11-21,2026-11-22,2026-11-23").split(",")
 PEOPLE = os.environ.get("PEOPLE", "2")
 DELAY = float(os.environ.get("DELAY", "45"))  # Seconds between requests; 10s got rate limited after ~110 requests.
 PREFIX = os.environ.get("ALERT_PREFIX", "")
 HERE = pathlib.Path(__file__).parent
 STATE = pathlib.Path(os.environ.get("STATE_FILE", HERE / "state.json"))
-CACHE = HERE / ".slots.json"  # Not committed: slot times for this run.
-LAST_OK = HERE / ".last_ok"  # Not committed: time of the last understood response.
+CACHE = HERE / f".slots-{SHOP}.json"  # Not committed: slot times for this run.
+LAST_OK = HERE / f".last_ok-{SHOP}"  # Not committed: time of the last understood response.
 BLOCKED_ALERT_AFTER = 2 * 3600
 
 BASE = f"https://www.tablecheck.com/en/shops/{SHOP}"
-BOOK_URL = f"{BASE}/reserve"
+BOOK_URL = os.environ.get("BOOK_URL", f"{BASE}/reserve")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36",
     "X-Requested-With": "XMLHttpRequest",
@@ -34,12 +37,20 @@ HEADERS = {
 # With no course selected, a free table comes back as warn/require_order.
 OPEN = {"success", "warn", "reservation_request"}
 # Understood, but not a free table of the wanted kind.
-# service_category = a different seating category is free, not the one we watch.
+# service_category = a different seating category is free, not the one being checked.
 NOT_OPEN = {"failure", "closed", "service_category", "smoking", "seat_type"}
+# This warning says the request was incomplete; it says nothing about tables.
+NOT_AVAILABILITY_WARNINGS = {"require_service_category"}
 
 
 class RateLimited(Exception):
     pass
+
+
+def is_open(res):
+    if res.get("status") == "warn" and res.get("data") in NOT_AVAILABILITY_WARNINGS:
+        return False
+    return res.get("status") in OPEN
 
 
 def get(path, params):
@@ -88,25 +99,27 @@ def check_day(day, cache, state):
     for label, epoch in slots_for(day, cache):
         if epoch <= now:
             continue
-        res = get("available", {
-            "reservation[start_at_epoch]": epoch,
-            "reservation[num_people_adult]": PEOPLE,
-            "reservation[service_category]": CATEGORY,
-        })
-        status = res.get("status")
-        key = f"{day} {label}"
-        print(key, status, json.dumps(res.get("data"), ensure_ascii=False)[:120], flush=True)
-        if status in OPEN or status in NOT_OPEN:
-            understood += 1
-        if status in OPEN:
-            if key not in state["open"]:
-                newly_open.append((key, label))
-        elif status in NOT_OPEN and key in state["open"]:
-            state["open"].remove(key)
-            save_state(state)
+        for category_id, category in CATEGORIES:
+            res = get("available", {
+                "reservation[start_at_epoch]": epoch,
+                "reservation[num_people_adult]": PEOPLE,
+                "reservation[service_category]": category_id,
+            })
+            status = res.get("status")
+            key = f"{day} {label} {category}"
+            print(key, status, json.dumps(res.get("data"), ensure_ascii=False)[:120], flush=True)
+            if is_open(res):
+                understood += 1
+                if key not in state["open"]:
+                    newly_open.append((key, f"{label} {category}"))
+            elif status in NOT_OPEN:
+                understood += 1
+                if key in state["open"]:
+                    state["open"].remove(key)
+                    save_state(state)
     if newly_open:
-        times = ", ".join(label for _, label in newly_open)
-        telegram(f"Jambo Hanare table open! {day}, {times}, for {PEOPLE}.\nBook now: {BOOK_URL}")
+        times = ", ".join(text for _, text in newly_open)
+        telegram(f"{VENUE} table open! {day}, {times}, for {PEOPLE}.\nBook now: {BOOK_URL}")
         # Saved after sending, so a failed send is retried on the next sweep.
         state["open"] += [key for key, _ in newly_open]
         save_state(state)
@@ -133,11 +146,11 @@ def main():
     if understood:
         LAST_OK.write_text(str(time.time()))
         if state["blocked_alerted"]:
-            telegram("Jambo watcher is checking again.")
+            telegram(f"{VENUE} watcher is checking again.")
             state["blocked_alerted"] = False
             save_state(state)
     elif not state["blocked_alerted"] and time.time() - float(LAST_OK.read_text()) > BLOCKED_ALERT_AFTER:
-        telegram("Jambo watcher can't read availability (blocked or the site changed) and may miss tables.")
+        telegram(f"{VENUE} watcher can't read availability (blocked or the site changed) and may miss tables.")
         state["blocked_alerted"] = True
         save_state(state)
     print(f"Sweep done: {understood} understood, open now: {state['open']}", flush=True)
