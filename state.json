@@ -1,4 +1,10 @@
 {
  "blocked_alerted": false,
- "open": []
+ "open": [
+  "2026-11-20 6:30 PM counter",
+  "2026-11-20 7:00 PM counter",
+  "2026-11-20 7:30 PM counter",
+  "2026-11-20 8:00 PM counter",
+  "2026-11-22 7:00 PM counter"
+ ]
 }
