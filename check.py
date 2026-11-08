@@ -16,7 +16,8 @@ import urllib.request
 VENUE = os.environ.get("VENUE", "Jambo Hanare")
 SHOP = os.environ.get("SHOP", "yakiniku-jambo-hanare")
 # Comma-separated id:label pairs, one for each seating category to watch.
-CATEGORIES = [c.split(":") for c in os.environ.get("CATEGORIES", "66761d96ee97d6a2169dce98:counter").split(",")]
+# Set it to an empty string for venues without seating categories.
+CATEGORIES = [c.split(":") for c in os.environ.get("CATEGORIES", "66761d96ee97d6a2169dce98:counter").split(",") if c] or [("", "")]
 DATES = os.environ.get("DATES", "2026-11-17,2026-11-18,2026-11-19,2026-11-20,2026-11-21,2026-11-22,2026-11-23").split(",")
 PEOPLE = os.environ.get("PEOPLE", "2")
 DELAY = float(os.environ.get("DELAY", "45"))  # Seconds between requests; 10s got rate limited after ~110 requests.
@@ -38,7 +39,8 @@ HEADERS = {
 OPEN = {"success", "warn", "reservation_request"}
 # Understood, but not a free table of the wanted kind.
 # service_category = a different seating category is free, not the one being checked.
-NOT_OPEN = {"failure", "closed", "service_category", "smoking", "seat_type"}
+# same_day/other_day = this time is taken, but other times are free; those get checked themselves.
+NOT_OPEN = {"failure", "closed", "service_category", "smoking", "seat_type", "same_day", "other_day"}
 # This warning says the request was incomplete; it says nothing about tables.
 NOT_AVAILABILITY_WARNINGS = {"require_service_category"}
 
@@ -100,18 +102,17 @@ def check_day(day, cache, state):
         if epoch <= now:
             continue
         for category_id, category in CATEGORIES:
-            res = get("available", {
-                "reservation[start_at_epoch]": epoch,
-                "reservation[num_people_adult]": PEOPLE,
-                "reservation[service_category]": category_id,
-            })
+            params = {"reservation[start_at_epoch]": epoch, "reservation[num_people_adult]": PEOPLE}
+            if category_id:
+                params["reservation[service_category]"] = category_id
+            res = get("available", params)
             status = res.get("status")
-            key = f"{day} {label} {category}"
+            key = f"{day} {label} {category}".strip()
             print(key, status, json.dumps(res.get("data"), ensure_ascii=False)[:120], flush=True)
             if is_open(res):
                 understood += 1
                 if key not in state["open"]:
-                    newly_open.append((key, f"{label} {category}"))
+                    newly_open.append((key, f"{label} {category}".strip()))
             elif status in NOT_OPEN:
                 understood += 1
                 if key in state["open"]:
