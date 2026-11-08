@@ -1,0 +1,83 @@
+name: Hatsunezushi watch
+
+# A long-running job sweeps the dates continuously for ~4h, then dispatches
+# its successor. The cron is only a backup to restart the chain if it breaks;
+# the concurrency group keeps just one watcher running.
+on:
+  schedule:
+    - cron: "20,50 * * * *"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "One slow sweep of one date, with the log visible when it ends"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: ${{ inputs.test && format('hatsune-test-{0}', github.run_id) || 'hatsune-watch' }}
+  cancel-in-progress: false
+
+env:
+  STOP_AT_JST: "2026-11-23 20:00"
+  # Free days, lunch or dinner. Closed Sundays, so no Nov 22.
+  DATES: "2026-11-19,2026-11-21,2026-11-23"
+  VENUE: Hatsunezushi
+  SHOP: hatsunezushi
+  BOOK_URL: https://www.tablecheck.com/en/shops/hatsunezushi/reserve
+  CATEGORIES: ""
+  STATE_FILE: state-hatsune.json
+  TG_TOKEN: ${{ secrets.TG_TOKEN }}
+  TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+
+jobs:
+  test:
+    if: ${{ inputs.test }}
+    runs-on: ubuntu-latest
+    env:
+      DATES: "2026-11-19"
+      DELAY: "5"
+      STATE_FILE: /tmp/test-state.json
+      ALERT_PREFIX: "TEST: "
+    steps:
+      - uses: actions/checkout@v4
+      - run: python check.py
+
+  watch:
+    if: ${{ !inputs.test }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Watch
+        run: |
+          git config user.name "watch-bot"
+          git config user.email "watch-bot@users.noreply.github.com"
+          stop_at=$(TZ=Asia/Tokyo date -d "$STOP_AT_JST" +%s)
+          # Leaves room for a 60-minute backoff plus a full sweep before the job timeout.
+          run_until=$(( $(date +%s) + 240 * 60 ))
+          while [ "$(date +%s)" -lt "$run_until" ]; do
+            if [ "$(date +%s)" -ge "$stop_at" ]; then
+              echo "Last slot has passed, disabling watcher"
+              gh workflow disable check-hatsune.yml
+              exit 0
+            fi
+            code=0
+            python check.py || code=$?
+            if ! git diff --quiet "$STATE_FILE"; then
+              git commit -qam "Update Hatsunezushi open slots"
+              git pull -q --rebase && git push -q || echo "push failed"
+            fi
+            # Back off properly if TableCheck says we're going too fast.
+            if [ "$code" -eq 3 ]; then sleep 3600; else sleep 30; fi
+          done
+      - name: Start next watcher
+        run: |
+          if [ "$(date +%s)" -lt "$(TZ=Asia/Tokyo date -d "$STOP_AT_JST" +%s)" ]; then
+            gh workflow run check-hatsune.yml
+          fi
