@@ -23,6 +23,8 @@ concurrency:
 
 env:
   STOP_AT_JST: "2026-11-23 22:00"
+  # Free dinner nights only: 17 Sushiroku, 18 Fuji day, 20 Jambo Hongo.
+  DATES: "2026-11-19,2026-11-21,2026-11-22,2026-11-23"
   VENUE: Ebisu Yoroniku
   SHOP: ebisu-yoroniku
   BOOK_URL: https://www.tablecheck.com/en/shops/ebisu-yoroniku/reserve
