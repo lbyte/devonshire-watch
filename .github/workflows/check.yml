@@ -23,8 +23,8 @@ concurrency:
 
 env:
   STOP_AT_JST: "2026-11-23 21:30"
-  # Not 17 (Sushiroku) or 18 (Fuji day). Nov 20 is Hongo's night, so a Hanare table then is a straight swap.
-  DATES: "2026-11-19,2026-11-20,2026-11-21,2026-11-22,2026-11-23"
+  # Not 17 (Sushiroku), 18 (Fuji day) or 21 (Sushi Murase). Nov 20 is Hongo's night, so a Hanare table then is a straight swap.
+  DATES: "2026-11-19,2026-11-20,2026-11-22,2026-11-23"
   TG_TOKEN: ${{ secrets.TG_TOKEN }}
   TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
 
